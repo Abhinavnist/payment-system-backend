@@ -12,7 +12,7 @@ from app.models.merchant import Merchant
 from app.core.config import settings
 from app.schemas.token import TokenPayload
 
-reusable_oauth2 = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/login/access-token")
+reusable_oauth2 = OAuth2PasswordBearer(tokenUrl=f"{settings.API_V1_STR}/auth/login/access-token")
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 

@@ -3,6 +3,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Body, BackgroundTasks
 from sqlalchemy.orm import Session
 import requests
+from pydantic import ValidationError
 
 from app import models, schemas
 from app.api import deps
@@ -37,55 +38,88 @@ def create_payment_request(
     
     This endpoint follows the documentation requirements.
     """
-    # Validate action type
-    if action not in ["DEPOSIT", "WITHDRAWAL"]:
-        raise HTTPException(
-            status_code=400, 
-            detail="Invalid action. Use 'DEPOSIT' or 'WITHDRAWAL'"
-        )
-    
-    # Validate currency
-    if currency != "INR":
-        raise HTTPException(
-            status_code=400,
-            detail="Only INR currency is supported"
-        )
-    
-    # Create payment request data
-    payment_data = schemas.PaymentCreate(
-        reference=reference,
-        payment_type=schemas.PaymentType.DEPOSIT if action == "DEPOSIT" else schemas.PaymentType.WITHDRAWAL,
-        payment_method=schemas.PaymentMethod.UPI if not bank else schemas.PaymentMethod.BANK_TRANSFER,
-        amount=amount,
-        currency=currency,
-        account_name=account_name,
-        account_number=account_number,
-        bank=bank,
-        bank_ifsc=bank_ifsc,
-        callback_url=callback_url or merchant.callback_url,
-        user_data=user_data
-    )
-    
-    # Process payment
-    processor = PaymentProcessor(db)
     try:
-        if action == "DEPOSIT":
-            payment, response_data = processor.process_deposit_request(merchant, payment_data)
-        else:
-            payment, response_data = processor.process_withdrawal_request(merchant, payment_data)
-            
-        # Format response according to documentation
-        return {
-            "message": "Success",
-            "status": 201,
-            "response": response_data
-        }
-    except ValueError as e:
-        logger.error(f"Payment request error: {str(e)}")
-        raise HTTPException(status_code=400, detail=str(e))
+        # Validate action type
+        if action not in ["DEPOSIT", "WITHDRAWAL"]:
+            return schemas.PaymentResponse(
+                message="Error",
+                status=400,
+                response={
+                    "code": 1001,
+                    "error": "Invalid action. Use 'DEPOSIT' or 'WITHDRAWAL'"
+                }
+            )
+        
+        # Validate currency
+        if currency != "INR":
+            return schemas.PaymentResponse(
+                message="Error",
+                status=400,
+                response={
+                    "code": 1002,
+                    "error": "Only INR currency is supported"
+                }
+            )
+        
+        # Create payment request data
+        try:
+            payment_data = schemas.PaymentCreate(
+                reference=reference,
+                payment_type=schemas.PaymentType.DEPOSIT if action == "DEPOSIT" else schemas.PaymentType.WITHDRAWAL,
+                payment_method=schemas.PaymentMethod.UPI if not bank else schemas.PaymentMethod.BANK_TRANSFER,
+                amount=amount,
+                currency=currency,
+                account_name=account_name,
+                account_number=account_number,
+                bank=bank,
+                bank_ifsc=bank_ifsc,
+                callback_url=callback_url or merchant.callback_url,
+                user_data=user_data
+            )
+        except ValidationError as e:
+            return schemas.PaymentResponse(
+                message="Error",
+                status=400,
+                response={
+                    "code": 1003,
+                    "error": str(e.errors()[0].get("msg")),
+                    "details": e.errors()
+                }
+            )
+        
+        # Process payment
+        processor = PaymentProcessor(db)
+        try:
+            if action == "DEPOSIT":
+                payment, response_data = processor.process_deposit_request(merchant, payment_data)
+            else:
+                payment, response_data = processor.process_withdrawal_request(merchant, payment_data)
+                
+            # Format success response
+            return schemas.PaymentResponse(
+                message="Success",
+                status=201,
+                response=response_data
+            )
+        except ValueError as e:
+            return schemas.PaymentResponse(
+                message="Error",
+                status=400,
+                response={
+                    "code": 1004,
+                    "error": str(e)
+                }
+            )
     except Exception as e:
         logger.error(f"Unexpected error: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        return schemas.PaymentResponse(
+            message="Error",
+            status=500,
+            response={
+                "code": 1005,
+                "error": "Internal server error"
+            }
+        )
 
 
 @router.post("/check-request", response_model=schemas.CheckRequestResponse)

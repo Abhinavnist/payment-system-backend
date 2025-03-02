@@ -3,7 +3,7 @@ from typing import Dict, Tuple, Optional
 from fastapi import FastAPI, Request, HTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 from collections import defaultdict
-
+from fastapi.responses import JSONResponse
 
 class RateLimiter(BaseHTTPMiddleware):
     """
@@ -41,8 +41,8 @@ class RateLimiter(BaseHTTPMiddleware):
         client_ip = request.client.host if request.client else "unknown"
         path = request.url.path
         
-        # Skip rate limiting for certain IPs (e.g., internal services)
-        if client_ip == "127.0.0.1":
+        # Allow docs and OpenAPI endpoints without rate limiting
+        if path.endswith(("/docs", "/openapi.json", "/redoc")):
             return await call_next(request)
             
         # Check rate limits for matching path prefixes

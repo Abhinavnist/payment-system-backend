@@ -13,17 +13,25 @@ from datetime import datetime
 from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Integer, Text, Enum
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 import enum
+from passlib.context import CryptContext
+from sqlalchemy_utils import database_exists, create_database
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Define database URL directly
-DB_USER = "postgres"
-DB_PASSWORD = "root"  # Using the password from your error message
-DB_HOST = "localhost"
-DB_NAME = "payment_system"
-SQLALCHEMY_DATABASE_URI = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}/{DB_NAME}"
+# Password hashing
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# Database configuration
+DB_USER = os.getenv("POSTGRES_USER", "postgres")
+DB_PASSWORD = os.getenv("POSTGRES_PASSWORD", "root")
+DB_HOST = os.getenv("POSTGRES_SERVER", "localhost")
+DB_NAME = os.getenv("POSTGRES_DB", "payment_system")
+DB_PORT = os.getenv("POSTGRES_PORT", "5432")
+
+# Create database URL
+SQLALCHEMY_DATABASE_URI = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
 # Create SQLAlchemy engine
 engine = create_engine(SQLALCHEMY_DATABASE_URI)
@@ -124,17 +132,19 @@ class Payment(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
+def hash_password(password: str) -> str:
+    """Hash a password using passlib's bcrypt implementation"""
+    return pwd_context.hash(password)
+
 def create_tables():
     """Create all tables in the database"""
-    inspector = inspect(engine)
-    
-    if not inspector.has_table("user"):
+    try:
         logger.info("Creating database tables...")
-        # Create all tables
         Base.metadata.create_all(bind=engine)
         logger.info("Tables created successfully")
-    else:
-        logger.info("Tables already exist")
+    except Exception as e:
+        logger.error(f"Error creating tables: {e}")
+        raise
 
 def create_superuser():
     """Create initial superuser if it doesn't exist"""
@@ -144,32 +154,99 @@ def create_superuser():
         user = db.query(User).filter(User.email == "admin@example.com").first()
         if not user:
             logger.info("Creating initial superuser...")
-            # Generate password hash
-            from passlib.context import CryptContext
-            pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-            hashed_password = pwd_context.hash("admin")
             
-            # Create superuser
+            # Create superuser with bcrypt hashed password
+            password = "admin123"  # More secure default password
+            hashed_password = hash_password(password)
+            
+            # Generate API key
+            api_key = str(uuid.uuid4())
+            
+            # Create user record
             user = User(
                 email="admin@example.com",
                 hashed_password=hashed_password,
                 full_name="Initial Admin",
                 is_superuser=True,
+                is_active=True,
+                api_key=api_key
             )
             db.add(user)
             db.commit()
             db.refresh(user)
-            logger.info("Initial superuser created successfully")
+            
+            # Create admin record
+            admin = Admin(
+                user_id=user.id,
+                phone="1234567890",  # Default phone number
+                can_manage_merchants=True,
+                can_verify_transactions=True,
+                can_export_reports=True
+            )
+            db.add(admin)
+            db.commit()
+            
+            logger.info("Initial superuser and admin records created successfully")
+            logger.info(f"Admin email: admin@example.com")
+            logger.info(f"Admin password: {password}")
+            logger.info(f"Admin API key: {api_key}")
         else:
-            logger.info("Superuser already exists")
+            # Check if admin record exists
+            admin = db.query(Admin).filter(Admin.user_id == user.id).first()
+            if not admin:
+                # Create admin record if it doesn't exist
+                admin = Admin(
+                    user_id=user.id,
+                    phone="1234567890",  # Default phone number
+                    can_manage_merchants=True,
+                    can_verify_transactions=True,
+                    can_export_reports=True
+                )
+                db.add(admin)
+                db.commit()
+                logger.info("Admin record created for existing superuser")
+            
+            # Ensure user has API key
+            if not user.api_key:
+                user.api_key = str(uuid.uuid4())
+                db.commit()
+                logger.info(f"Generated new API key for admin: {user.api_key}")
+            
+            logger.info("Superuser and admin records exist")
+            logger.info(f"Admin email: {user.email}")
+            logger.info(f"Admin API key: {user.api_key}")
     except Exception as e:
         logger.error(f"Error creating superuser: {e}")
         db.rollback()
+        raise
     finally:
         db.close()
 
+def setup_database():
+    """Initialize the database"""
+    try:
+        logger.info(f"Connecting to database: {SQLALCHEMY_DATABASE_URI}")
+        
+        # Create database if it doesn't exist
+        if not database_exists(engine.url):
+            create_database(engine.url)
+            logger.info(f"Created database: {DB_NAME}")
+        
+        # Drop all tables and recreate
+        Base.metadata.drop_all(bind=engine)
+        logger.info("Dropped all existing tables")
+        
+        # Create tables
+        create_tables()
+        
+        # Create superuser
+        create_superuser()
+        
+        logger.info("Database setup completed successfully!")
+        
+    except Exception as e:
+        logger.error(f"Error setting up database: {str(e)}")
+        raise
+
 if __name__ == "__main__":
-    logger.info(f"Connecting to database: {SQLALCHEMY_DATABASE_URI}")
-    create_tables()
-    create_superuser()
-    logger.info("Database setup completed")
+    setup_database()

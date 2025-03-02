@@ -25,6 +25,11 @@ class PaymentStatus(str, enum.Enum):
 
 
 class Payment(Base):
+    __tablename__ = "payment"
+
+    # Primary key
+    id = Column(UUID(as_uuid=True), primary_key=True)
+    
     # Basic payment info
     merchant_id = Column(UUID(as_uuid=True), ForeignKey("merchant.id"), nullable=False)
     merchant = relationship("Merchant", backref="payments")
@@ -42,7 +47,8 @@ class Payment(Base):
     
     # UPI specific data
     upi_id = Column(String, nullable=True)
-    qr_code_data = Column(Text, nullable=True)  # URL or base64 encoded QR
+    # qr_code_data = Column(Text, nullable=True)  # URL or base64 encoded QR
+    upi_payment_string = Column(Text, nullable=True)
     
     # Bank transfer data
     bank_name = Column(String, nullable=True)

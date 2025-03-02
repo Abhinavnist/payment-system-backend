@@ -20,7 +20,13 @@ app = FastAPI(
     openapi_url=f"{settings.API_V1_STR}/openapi.json"
 )
 
-# Set all CORS enabled origins
+# Add rate limiting middleware first
+app.add_middleware(RateLimiter)
+
+# Add IP whitelist middleware
+app.add_middleware(IPWhitelistMiddleware)
+
+# Set all CORS enabled origins last
 if settings.BACKEND_CORS_ORIGINS:
     app.add_middleware(
         CORSMiddleware,
@@ -30,14 +36,9 @@ if settings.BACKEND_CORS_ORIGINS:
         allow_headers=["*"],
     )
 
-# Add IP whitelist middleware
-app.add_middleware(IPWhitelistMiddleware)
-
-# Add rate limiting middleware
-app.add_middleware(RateLimiter)
-
 # Include API router
 app.include_router(api_router, prefix=settings.API_V1_STR)
+
 
 
 @app.on_event("startup")

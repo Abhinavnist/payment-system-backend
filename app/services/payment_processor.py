@@ -3,6 +3,7 @@ import logging
 from datetime import datetime
 from typing import Dict, Any, Optional, Tuple
 from sqlalchemy.orm import Session
+import urllib.parse
 
 from app.models.payment import Payment, PaymentStatus, PaymentType, PaymentMethod
 from app.models.merchant import Merchant
@@ -61,15 +62,17 @@ class PaymentProcessor:
             # Generate QR code for UPI payment
             upi_id = merchant.upi_details.get("upi_id")
             name = merchant.upi_details.get("name", merchant.business_name)
-            qr_data = generate_upi_qr(
-                upi_id=upi_id,
-                name=name,
-                amount=payment_data.amount,
-                transaction_ref=trxn_hash_key
-            )
+            amount=payment_data.amount
+            upi_payment_string = f"upi://pay?pa={upi_id}&pn={urllib.parse.quote(name)}&am={amount}&tr={payment.trxn_hash_key}&cu=INR"
+            # upi_link, qr_data = generate_upi_qr(
+            #     upi_id=upi_id,
+            #     name=name,
+            #     amount=payment_data.amount,
+            #     transaction_ref=trxn_hash_key
+            # )
             
             payment.upi_id = upi_id
-            payment.qr_code_data = qr_data
+            payment.upi_payment_string = upi_payment_string
             
             response_data = {
                 "paymentMethod": "UPI",
@@ -77,7 +80,9 @@ class PaymentProcessor:
                     "upi_id": upi_id,
                     "name": name
                 },
-                "qrCode": qr_data,
+                # "upiLink": upi_link,
+                "upiString": upi_payment_string,
+                # "qrCode": qr_data,
                 "trxnHashKey": trxn_hash_key,
                 "amount": str(payment_data.amount),
                 "requestedDate": datetime.utcnow().isoformat()

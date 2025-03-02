@@ -17,7 +17,6 @@ class Merchant(Base):
     address = Column(Text, nullable=True)
     
     api_key = Column(String, unique=True, index=True, nullable=False)
-    webhook_secret = Column(String, nullable=True)  # Secret key for webhook signature verification
     webhook_url = Column(String, nullable=True)
     callback_url = Column(String, nullable=True)
     
